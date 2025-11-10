@@ -1,0 +1,90 @@
+def sequential_feature_selection(X, y, outer_folds=5, inner_folds=10, random_state=42):
+    CV_outer = KFold(n_splits=outer_folds, shuffle=True, random_state=random_state)
+
+    fold_results = []  # store per-fold feature paths & errors
+    outer_test_mse = []
+
+    for outer_train_idx, outer_test_idx in CV_outer.split(X):
+
+        # 4.3) Split X and y into training/testing data for this outer fold
+        # Name them X_train_outer, X_test_outer, y_train_outer, y_test_outer
+        ### BEGIN SOLUTION
+        X_train_outer, X_test_outer = X.iloc[outer_train_idx], X.iloc[outer_test_idx]
+        y_train_outer, y_test_outer = y.iloc[outer_train_idx], y.iloc[outer_test_idx]
+        ### END SOLUTION
+
+        selected_features = []
+        mse_per_iteration = []
+        remaining_features = list(X.columns)
+        best_mse = np.inf
+
+        # Feature addition while-loop, keep adding features until no improvement
+        while remaining_features:
+            feature_mse = {}
+
+            for feat in remaining_features:
+                candidate_features = selected_features + [feat]
+
+                # inner CV
+                CV_inner = KFold(n_splits=inner_folds, shuffle=True, random_state=random_state)
+                inner_mse = []
+
+                for inner_train_idx, inner_test_idx in CV_inner.split(X_train_outer):
+
+                    # 4.4) Split X_train_outer and y_train_outer into training/testing data for this inner fold.
+                    # Name them X_train_inner, X_test_inner, y_train_inner, y_test_inner
+                    ### BEGIN SOLUTION
+                    X_train_inner, X_test_inner = X_train_outer.iloc[inner_train_idx], X_train_outer.iloc[inner_test_idx]
+                    y_train_inner, y_test_inner = y_train_outer.iloc[inner_train_idx], y_train_outer.iloc[inner_test_idx]
+                    ### END SOLUTION
+                    
+                    # 4.5.1) Create Linear Regression model, fit, and predict on the inner sets
+                    # - save predictions as y_test_inner_pred.
+                    # Remember to only take the candidate_features into consideration.
+                    ### BEGIN SOLUTION
+                    model = LinearRegression(fit_intercept=True)
+                    model.fit(X_train_inner[candidate_features], y_train_inner)
+                    y_test_inner_pred = model.predict(X_test_inner[candidate_features])
+                    ### END SOLUTION
+                    # Add score for this fold
+                    inner_mse.append(mean_squared_error(y_test_inner, y_test_inner_pred))
+
+                # Save average MSE with this feature added
+                feature_mse[feat] = np.mean(inner_mse)
+
+            # pick best new feature
+            best_feat = min(feature_mse, key=feature_mse.get)
+            best_feat_mse = feature_mse[best_feat]
+
+            # If best feature improves MSE, add it
+            if best_feat_mse < best_mse:
+                selected_features.append(best_feat)
+                mse_per_iteration.append(best_feat_mse)
+                best_mse = best_feat_mse
+                remaining_features.remove(best_feat)
+
+            else: # No improvement - get actual test MSE for outer loop, with best feature set.
+                
+                # 4.5.2) Create Linear Regression model, fit, and predict on the outer sets
+                # - save predictions as y_test_outer_pred.
+                # Remember to only take the selected_features into consideration.
+                ### BEGIN SOLUTION
+                model = LinearRegression(fit_intercept=True)
+                model.fit(X_train_outer[selected_features], y_train_outer)
+                y_test_outer_pred = model.predict(X_test_outer[selected_features])
+                ### END SOLUTION
+
+                outer_test_mse = mean_squared_error(y_test_outer, y_test_outer_pred)
+                break # Break out of while loop
+
+        fold_results.append({
+            "mse": mse_per_iteration,
+            "features": selected_features,
+            "outer_test_mse": outer_test_mse
+        })
+
+    return fold_results
+
+
+results = sequential_feature_selection(X, y, random_state=1)
+plot_seq_feature_results(results, list(X.columns))
